@@ -108,6 +108,7 @@ class Cell:
                 t.goto(self.x, y1)
                 # t.circle(-r, 90)
             t.penup()
+            turtle.update()
         # else:
         #     t.goto(x + 2, y + 2)
         #     t.setheading(0)
@@ -144,6 +145,7 @@ class Layout:
         self.turtle.penup()
 
         self.layout = []
+        self.must_connect = []
         for row in range(size):
             col_list = []
             for col in range(size):
@@ -202,8 +204,8 @@ class Layout:
     def set_constraints(self, values):
         """ Takes string of 16 numbers representing top and right side """
         v = list(values)
-        self.col_constraints = [int(i) for i in v[:8]]
-        right = v[8:]
+        self.col_constraints = [int(i) for i in v[:self.size]]
+        right = v[self.size:]
         right.reverse()
         self.row_constraints = [int(i) for i in right]
 
@@ -224,12 +226,16 @@ class Layout:
             # determine adjacent cells that must connect
             if not cell.top:
                 self.layout[r + 1][c].must_connect = True
+                self.must_connect.append(self.layout[r + 1][c])
             if not cell.bottom:
                 self.layout[r - 1][c].must_connect = True
+                self.must_connect.append(self.layout[r - 1][c])
             if not cell.left:
                 self.layout[r][c - 1].must_connect = True
+                self.must_connect.append(self.layout[r][c - 1])
             if not cell.right:
                 self.layout[r][c + 1].must_connect = True
+                self.must_connect.append(self.layout[r][c + 1])
 
 
     def set_start(self, hrow):
@@ -242,11 +248,15 @@ class Layout:
 
     def moves(self, cell):
         """ return a list of possible moves for a cell """
+        self.move_count += 1
+        if self.move_count == self.move_max:
+            raise ValueError("Max move count reached")
         result = []
         r1 = cell.row - 1
         r2 = cell.row + 1
         c1 = cell.col - 1
         c2 = cell.col + 1
+
         if r2 < self.size and (cell.is_empty() or cell.has_dir("N")):
             if self.layout[r2][cell.col].content == Content.EMPTY:
                 result.append("N")
@@ -271,11 +281,13 @@ class Layout:
             result.remove("W")
         if cell.is_end and "S" in result:
             result.remove("S")
-
         return result
 
 
     def check_constraints(self, exact=False):
+        """ Returns true if all cell counts within limits """
+        self.row_count = []
+        self.col_count = []
         for row in range(self.size):
             count = 0
             for col in range(self.size):
@@ -286,6 +298,7 @@ class Layout:
                     if cell.must_connect and cell.is_empty():
                         print("Must connect failure")
                         return False
+            self.row_count.append(self.row_constraints[row] - count)
             if exact:
                 if count != self.row_constraints[row]:
                     print(f"Exact Row {row} failure {count} != {self.row_constraints[row]}")
@@ -300,6 +313,7 @@ class Layout:
                 cell = self.layout[row][col]
                 if not cell.is_empty():
                     count += 1
+            self.col_count.append(self.col_constraints[col] - count)
             if exact:
                 if count != self.col_constraints[col]:
                     print(f"Exact column {col} failure {count} != {self.col_constraints[col]}")
@@ -308,12 +322,78 @@ class Layout:
                 if count > self.col_constraints[col]:
                     print(f"Column {col} failure {count} > {self.col_constraints[col]}")
                     return False
+        if exact:
+            for cell in self.must_connect:
+                if cell.content != Content.EMPTY:
+                    return True
         return True
+
+
+    def not_trapped(self, cell):
+        """ Return false if trapped one side of a full row or col and need to get to the other side """
+        for c in range(1, self.size - 1):
+            if self.col_count[c] == 0:
+                if cell.col < c:
+                    for i in range(c + 1,  self.size):
+                        if self.col_count[i] > 0:
+                            return False
+                elif cell.col > c:
+                    for i in range(c - 1, 0, -1):
+                        if self.col_count[i] > 0:
+                            return False
+        for r in range(1, self.size - 1):
+            if self.row_count[r] == 0:
+                if cell.row < r:
+                    for i in range(r + 1,  self.size):
+                        if self.row_count[i] > 0:
+                            return False
+                elif cell.row > r:
+                    for i in range(r - 1, 0, -1):
+                        if self.row_count[i] > 0:
+                            return False
+        return True
+
+
+    def not_one_short(self, cell):
+
+        return True
+
+        if cell.col > 0:
+            if self.col_count[cell.col - 1] == 1:
+                if cell.col == 1:
+                    return False
+                if self.col_count[cell.col - 2] == 0:
+                    return False
+        if cell.col < self.size - 1:
+            if self.col_count[cell.col + 1] == 1:
+                if cell.col == self.size - 2:
+                    return False
+                if self.col_count[cell.col + 2] == 0:
+                    return False
+        if cell.row > 0:
+            if self.row_count[cell.row - 1] == 1:
+                if cell.row == 1:
+                    return False
+                if self.row_count[cell.row - 2] == 0:
+                    return False
+        if cell.row < self.size - 1:
+            if self.row_count[cell.row + 1] == 1:
+                if cell.row == self.size - 2:
+                    return False
+                if self.row_count[cell.row + 2] == 0:
+                    return False
+        return True
+
+    def done(self, cell):
+        if cell.row == 0 and cell.col == self.end:
+            if self.check_constraints(exact=True):
+                return True
+        return False
 
     def move_from(self, cell, dir):
         """ move from cell in direction dir  """
         print (cell, dir)
-        self.draw()
+        cell.draw_track(self.turtle)
         if dir == "N":
             from_dir = "S"
             new_cell = self.layout[cell.row + 1][cell.col]
@@ -330,20 +410,32 @@ class Layout:
         if new_cell.content == Content.EMPTY:
             new_cell.content = Content.TEMP_TRACK
             undo = True
+        if self.done(cell):
+            raise ValueError("Complete")
         if self.check_constraints():
-            if undo:
-                new_cell.content = Content.EMPTY
-            moves = self.moves(new_cell)
-            if from_dir in moves:
-                moves.remove(from_dir)
-            for to_dir in moves:
-                if new_cell.content == Content.EMPTY:
-                    for tr in Track:
-                        if from_dir in tr.name and to_dir in tr.name:
-                            new_cell.track = tr
-                            new_cell.content = Content.TEMP_TRACK
-                            break
-                self.move_from(new_cell, to_dir)
+            if self.not_one_short(new_cell):
+                if self.not_trapped(new_cell):
+                    if undo:
+                        new_cell.content = Content.EMPTY
+                    moves = self.moves(new_cell)
+                    if from_dir in moves:
+                        moves.remove(from_dir)
+                    # favour continuing in same direction
+                    if dir in moves:
+                        moves.remove(dir)
+                        moves.insert(0, dir)
+                    for to_dir in moves:
+                        if new_cell.content == Content.EMPTY:
+                            for tr in Track:
+                                if from_dir in tr.name and to_dir in tr.name:
+                                    new_cell.track = tr
+                                    new_cell.content = Content.TEMP_TRACK
+                                    break
+                        self.move_from(new_cell, to_dir)
+                else:
+                    print ("Would be trapped")
+            else:
+                print("One short")
         # get here if path we took is wrong somewhere
         if new_cell.content == Content.TEMP_TRACK:
             new_cell.content = Content.EMPTY
@@ -357,17 +449,27 @@ class Layout:
         for to_dir in moves:
             self.move_from(new_cell, to_dir)
 
-
-board = Layout()
-
-board.add_track(Track.NW, 1, 7, True)
-board.add_track(Track.SE, 3, 8, True)
-board.add_track(Track.EW, 5, 3, True)
-board.add_track(Track.NS, 5, 1, True)
-board.set_start(7)
-board.set_end(5)
-board.set_constraints("2464575286563421")
+board = Layout(size=4)
+# board.add_track(Track.NW, 1, 7, True)
+# board.add_track(Track.SE, 3, 8, True)
+# board.add_track(Track.EW, 5, 3, True)
+# board.add_track(Track.NS, 5, 1, True)
+# board.set_start(7)
+# board.set_end(5)
+# board.set_constraints("2464575286563421")
+board.add_track(Track.SW, 3, 4, True)
+board.add_track(Track.NW, 4, 2, True)
+board.add_track(Track.EW, 1, 3, True)
+board.add_track(Track.NS, 2, 1, True)
+board.set_start(3)
+board.set_end(2)
+board.set_constraints("14322431")
 board.draw()
-board.begin()
+board.move_count = 0
+board.move_max = 100000
+try:
+    board.begin()
+except ValueError as e:
+    print(e)
 screen = turtle.Screen()
 ans = screen.textinput("Done", "Hit key")
