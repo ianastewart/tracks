@@ -50,13 +50,13 @@ class Cell:
         t.color("gray")
         t.write(f" {self.row},{self.col}", font=font)
         t.setheading(0)
-        t.forward(self.cell_size )
+        t.forward(self.cell_size)
         t.left(90)
-        t.forward(self.cell_size )
+        t.forward(self.cell_size)
         t.left(90)
-        t.forward(self.cell_size )
+        t.forward(self.cell_size)
         t.left(90)
-        t.forward(self.cell_size )
+        t.forward(self.cell_size)
         t.penup()
 
     def draw_track(self, t, erase=False):
@@ -116,6 +116,7 @@ class Cell:
             t.penup()
             turtle.update()
 
+
 class Layout:
     def __init__(self, size=8):
         self.size = size
@@ -146,7 +147,6 @@ class Layout:
         self.end = 0
         self.move_count = 0
         self.move_max = 100000
-
 
     def draw(self):
         for row in range(self.size):
@@ -183,9 +183,9 @@ class Layout:
         y = row * self.cell_size + self.cell_size / 2
         return x, y
 
-    def draw_moves(self, cell, x, y):
+    def draw_moves(self, cell):
         """ debug routine to list all possible moves from a cell """
-        self.turtle.goto(x, y)
+        self.turtle.goto(cell.x, cell.y)
         self.turtle.write(self.moves(cell))
 
     def set_constraints(self, values):
@@ -196,44 +196,46 @@ class Layout:
         right.reverse()
         self.row_constraints = [int(i) for i in right]
 
-    def add_track(self, track=Track.EW, r=0, c=0, permanent=False):
-        """ Add track uses human row column coordinates 1 to 8 """
-        cell = self.layout[r][c]
-        cell.content = Content.PERMANENT if permanent else Content.TEMP_TRACK
-        cell.track = track
-        name = track.name
-        cell.top = False if "N" in name else True
-        cell.bottom = False if "S" in name and r > 0 else True
-        cell.left = False if "W" in name and c > 0 else True
-        cell.right = False if "E" in name else True
-        if permanent:
-            # determine adjacent cells that must connect
-            if not cell.top:
-                self.layout[r + 1][c].must_connect = True
-                self.must_connect.append(self.layout[r + 1][c])
-            if not cell.bottom:
-                self.layout[r - 1][c].must_connect = True
-                self.must_connect.append(self.layout[r - 1][c])
-            if not cell.left:
-                self.layout[r][c - 1].must_connect = True
-                self.must_connect.append(self.layout[r][c - 1])
-            if not cell.right:
-                self.layout[r][c + 1].must_connect = True
-                self.must_connect.append(self.layout[r][c + 1])
+    def add_track(self, track, row, col, start=False, end=False):
+        """
+        Add a permanent piece of track to the layout
+        Start and end are special cases
+        """
+        cell = self.layout[row][col]
+        cell.content = Content.PERMANENT
+        cell.track = Track[track]
+        if start:
+            if col != 0:
+                raise ValueError("Invalid start position")
+            self.start = row
+            cell.is_start = True
+        if end:
+            if row != 0:
+                raise ValueError("Invalid end position")
+            self.end = col
+            cell.is_end = True
 
-    def set_start(self, row):
-        self.start = row
-        self.layout[row][0].is_start = True
-
-    def set_end(self, col):
-        self.end = col
-        self.layout[0][col].is_end = True
+        cell.top = False if "N" in track else True
+        cell.bottom = False if "S" in track and row > 0 else True
+        cell.left = False if "W" in track and col > 0 else True
+        cell.right = False if "E" in track else True
+        # determine adjacent cells that must connect
+        if not cell.top:
+            self.layout[row + 1][col].must_connect = "S"
+            self.must_connect.append(self.layout[row + 1][col])
+        if not cell.bottom:
+            self.layout[row - 1][col].must_connect = "N"
+            self.must_connect.append(self.layout[row - 1][col])
+        if not cell.left:
+            self.layout[row][col - 1].must_connect = "E"
+            self.must_connect.append(self.layout[row][col - 1])
+        if not cell.right:
+            self.layout[row][col + 1].must_connect = "W"
+            self.must_connect.append(self.layout[row][col + 1])
 
     def moves(self, cell):
         """ return a list of possible moves for a cell """
-        self.move_count += 1
-        if self.move_count == self.move_max:
-            raise ValueError("Max move count reached")
+
         result = []
         r1 = cell.row - 1
         r2 = cell.row + 1
@@ -376,7 +378,10 @@ class Layout:
 
     def move_from(self, cell, dir):
         """ move from cell in direction dir  """
-        print(cell, dir)
+        self.move_count += 1
+        if self.move_count == self.move_max:
+            raise ValueError("Max move count reached")
+
         cell.draw_track(self.turtle)
         if dir == "N":
             from_dir = "S"
@@ -434,31 +439,57 @@ class Layout:
             self.move_from(new_cell, to_dir)
 
 
-board = Layout(size=8)
-board.add_track(Track.NW, 6, 0, True)
-board.add_track(Track.SE, 7, 2, True)
-board.add_track(Track.EW, 2, 4, True)
-board.add_track(Track.NS, 0, 4, True)
+def parse(params):
+    """
+    Structure: Size:Constraints:track-tuple:track-tuple
+    """
+    bits = params.split(":")
+    size = int(bits[0])
+    if len(bits[1]) != 2 * size:
+        raise ValueError("Params wrong - 1")
+    l = Layout(size)
+    l.set_constraints(bits[1])
+    for i in range(2, len(bits)):
+        c = bits[i]
+        start = False
+        end = False
+        if len(c) == 5:
+            if c[4] == "s":
+                start = True
+            elif c[4] == "e":
+                end = True
+            else:
+                raise("Params wrong - 2")
+        l.add_track(c[:2], int(c[2]), int(c[3]), start=start, end=end)
+    return l
 
 
-board.set_start(6)
-board.set_end(4)
-board.set_constraints("2464575286563421")
+def main():
+    board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
 
-# board = Layout(size=4)
-# board.add_track(Track.SW, 2, 3, True)
-# board.add_track(Track.NW, 3, 1, True)
-# board.add_track(Track.EW, 0, 2, True)
-# board.add_track(Track.NS, 1, 0, True)
-# board.set_start(2)
-# board.set_end(1)
-# board.set_constraints("14322431")
+    # board = Layout(size=8)
+    # board.add_track("NW", 6, 0, start=True)
+    # board.add_track("SE", 7, 2)
+    # board.add_track("EW", 2, 4)
+    # board.add_track("NS", 0, 4, end=True)
+    # board.set_constraints("2464575286563421")
 
-board.draw()
+    # board = Layout(size=4)
+    # board.add_track(Track.SW, 2, 3)
+    # board.add_track(Track.NW, 3, 1)
+    # board.add_track(Track.EW, 0, 2, start=True)
+    # board.add_track(Track.NS, 1, 0, end=True)
+    # board.set_constraints("14322431")
 
-try:
-    board.begin()
-except ValueError as e:
-    print(e)
-screen = turtle.Screen()
-ans = screen.textinput("Done", "Hit key")
+    board.draw()
+
+    try:
+        board.begin()
+    except ValueError as e:
+        print(e)
+    screen = turtle.Screen()
+    ans = screen.textinput("Done", "Hit key")
+
+
+if __name__ == "__main__":
+    main()
