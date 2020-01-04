@@ -1,6 +1,7 @@
 from enum import Enum
 import turtle
 
+
 class Track(Enum):
     NE = 1
     SE = 2
@@ -30,7 +31,7 @@ class Cell:
         self.is_end = False
 
     def __str__(self):
-        return f"Cell {self.row} {self.col} {self.content} {self.track}"
+        return f"R:{self.row} C:{self.col} {self.content} {self.track}"
 
     def is_empty(self):
         return self.content == Content.EMPTY
@@ -45,16 +46,17 @@ class Cell:
         t.pensize(1)
         t.setpos(self.x, self.y)
         t.pendown()
+        font = ("sans-serif", 18, "normal")
+        t.color("gray")
+        t.write(f" {self.row},{self.col}", font=font)
         t.setheading(0)
-        color = "gray"
-        t.color(color)
-        t.forward(self.cell_size - 4)
+        t.forward(self.cell_size )
         t.left(90)
-        t.forward(self.cell_size - 4)
+        t.forward(self.cell_size )
         t.left(90)
-        t.forward(self.cell_size - 4)
+        t.forward(self.cell_size )
         t.left(90)
-        t.forward(self.cell_size - 4)
+        t.forward(self.cell_size )
         t.penup()
 
     def draw_track(self, t, erase=False):
@@ -90,58 +92,46 @@ class Cell:
             elif self.track == Track.NE:
                 t.goto(x1, y2)
                 t.pendown()
+                t.goto(x1, y1)
                 t.goto(x2, y1)
                 # t.circle(-r, -90)
             elif self.track == Track.SE:
                 t.goto(x1, self.y)
                 t.pendown()
+                t.goto(x1, y1)
                 t.goto(x2, y1)
                 # t.circle(r, -90)
             elif self.track == Track.NW:
                 t.goto(x1, y2)
                 t.pendown()
+                t.goto(x1, y1)
                 t.goto(self.x, y1)
                 # t.circle(r, -90)
             elif self.track == Track.SW:
                 t.goto(x1, self.y)
                 t.pendown()
+                t.goto(x1, y1)
                 t.goto(self.x, y1)
                 # t.circle(-r, 90)
             t.penup()
             turtle.update()
-        # else:
-        #     t.goto(x + 2, y + 2)
-        #     t.setheading(0)
-        #     t.begin_fill()
-        #     t.color('white')
-        #     t.pendown()
-        #     t.forward(x - 4)
-        #     t.right(90)
-        #     t.forward(x - 4)
-        #     t.right(90)
-        #     t.forward(x - 4)
-        #     t.right(90)
-        #     t.forward(x - 4)
-        #     t.right(90)
-        #     t.end_fill()
-        #     t.penup()
-        
+
 class Layout:
     def __init__(self, size=8):
         self.size = size
         self.scr = turtle.Screen()
         self.scr.title("Train tracks")
         self.turtle = turtle.Turtle()
-        turtle.mode('standard')
+        turtle.mode("standard")
 
         turtle.screensize(1000, 1000)
         self.screen_size = 1000
-        self.cell_size = self.screen_size/(size + 1)
+        self.cell_size = self.screen_size / (size + 1)
         turtle.setworldcoordinates(0, 0, self.screen_size, self.screen_size)
         self.turtle.hideturtle()
-        self.turtle.speed('fast')
+        self.turtle.speed("fast")
         turtle.delay(0)
-        turtle.tracer(0,0)
+        turtle.tracer(0, 0)
         self.turtle.penup()
 
         self.layout = []
@@ -151,12 +141,12 @@ class Layout:
             for col in range(size):
                 col_list.append(Cell(row, col, self.cell_size))
             self.layout.append(col_list)
-        # Add borders
-        # for i in range(size):
-        #     self.layout[0][i].bottom = True
-        #     self.layout[size -1 ][i].top = True
-        #     self.layout[i][0].left = True
-        #     self.layout[i][size - 1].right = True
+
+        self.start = 0
+        self.end = 0
+        self.move_count = 0
+        self.move_max = 100000
+
 
     def draw(self):
         for row in range(self.size):
@@ -166,28 +156,27 @@ class Layout:
                 cell.draw_track(self.turtle)
         turtle.update()
         row = self.size
-        font = font=('sans-serif', 18, 'normal')
-        self.turtle.color('black')
+        font = ("sans-serif", 18, "normal")
+        self.turtle.color("black")
         # Numbers across the top
         for col in range(self.size):
             x, y = self.coords(row, col)
-            self.turtle.setpos(x+self.cell_size/3, y)
+            self.turtle.setpos(x + self.cell_size / 3, y)
             self.turtle.write(self.col_constraints[col], font=font)
         col = self.size
         # Numbers down right side
-        for row in range(self.size-1, -1, -1):
+        for row in range(self.size - 1, -1, -1):
             x, y = self.coords(row, col)
-            self.turtle.setpos(x + self.cell_size / 6, y + self.cell_size / 3 )
+            self.turtle.setpos(x + self.cell_size / 6, y + self.cell_size / 3)
             self.turtle.write(self.row_constraints[row], font=font)
         # start and end
-        x, y = self.coords(*self.start)
-        self.turtle.setpos(x-self.cell_size / 3, y+self.cell_size / 3)
+        x, y = self.coords(self.start, 0)
+        self.turtle.setpos(x - self.cell_size / 3, y + self.cell_size / 3)
         self.turtle.write("A", font=font)
-        x, y = self.coords(*self.end)
-        self.turtle.setpos(x+self.cell_size / 3, y - self.cell_size / 2)
+        x, y = self.coords(0, self.end)
+        self.turtle.setpos(x + self.cell_size / 3, y - self.cell_size / 2)
         self.turtle.write("B", font=font)
         turtle.update()
-        # self.turtle.setpos()
 
     def coords(self, row, col):
         x = col * self.cell_size + self.cell_size / 2
@@ -196,24 +185,19 @@ class Layout:
 
     def draw_moves(self, cell, x, y):
         """ debug routine to list all possible moves from a cell """
-        self.turtle.goto(x,y)
+        self.turtle.goto(x, y)
         self.turtle.write(self.moves(cell))
 
-    
-
     def set_constraints(self, values):
-        """ Takes string of 16 numbers representing top and right side """
+        """ Takes string of numbers representing top and right side """
         v = list(values)
-        self.col_constraints = [int(i) for i in v[:self.size]]
-        right = v[self.size:]
+        self.col_constraints = [int(i) for i in v[: self.size]]
+        right = v[self.size :]
         right.reverse()
         self.row_constraints = [int(i) for i in right]
 
-
-    def add_track(self, track=Track.EW, hcol=1, hrow=1, permanent=False):
+    def add_track(self, track=Track.EW, r=0, c=0, permanent=False):
         """ Add track uses human row column coordinates 1 to 8 """
-        r = hrow - 1
-        c = hcol - 1
         cell = self.layout[r][c]
         cell.content = Content.PERMANENT if permanent else Content.TEMP_TRACK
         cell.track = track
@@ -237,14 +221,13 @@ class Layout:
                 self.layout[r][c + 1].must_connect = True
                 self.must_connect.append(self.layout[r][c + 1])
 
+    def set_start(self, row):
+        self.start = row
+        self.layout[row][0].is_start = True
 
-    def set_start(self, hrow):
-        self.start = (hrow - 1, 0,)
-        self.layout[hrow-1][0].is_start = True
-
-    def set_end(self, hcol):
-        self.end = (0, hcol - 1,)
-        self.layout[0][hcol-1].is_end = True
+    def set_end(self, col):
+        self.end = col
+        self.layout[0][col].is_end = True
 
     def moves(self, cell):
         """ return a list of possible moves for a cell """
@@ -283,7 +266,6 @@ class Layout:
             result.remove("S")
         return result
 
-
     def check_constraints(self, exact=False):
         """ Returns true if all cell counts within limits """
         self.row_count = []
@@ -301,7 +283,9 @@ class Layout:
             self.row_count.append(self.row_constraints[row] - count)
             if exact:
                 if count != self.row_constraints[row]:
-                    print(f"Exact Row {row} failure {count} != {self.row_constraints[row]}")
+                    print(
+                        f"Exact Row {row} failure {count} != {self.row_constraints[row]}"
+                    )
                     return False
             else:
                 if count > self.row_constraints[row]:
@@ -316,7 +300,9 @@ class Layout:
             self.col_count.append(self.col_constraints[col] - count)
             if exact:
                 if count != self.col_constraints[col]:
-                    print(f"Exact column {col} failure {count} != {self.col_constraints[col]}")
+                    print(
+                        f"Exact column {col} failure {count} != {self.col_constraints[col]}"
+                    )
                     return False
             else:
                 if count > self.col_constraints[col]:
@@ -328,13 +314,12 @@ class Layout:
                     return True
         return True
 
-
     def not_trapped(self, cell):
         """ Return false if trapped one side of a full row or col and need to get to the other side """
         for c in range(1, self.size - 1):
             if self.col_count[c] == 0:
                 if cell.col < c:
-                    for i in range(c + 1,  self.size):
+                    for i in range(c + 1, self.size):
                         if self.col_count[i] > 0:
                             return False
                 elif cell.col > c:
@@ -344,7 +329,7 @@ class Layout:
         for r in range(1, self.size - 1):
             if self.row_count[r] == 0:
                 if cell.row < r:
-                    for i in range(r + 1,  self.size):
+                    for i in range(r + 1, self.size):
                         if self.row_count[i] > 0:
                             return False
                 elif cell.row > r:
@@ -352,7 +337,6 @@ class Layout:
                         if self.row_count[i] > 0:
                             return False
         return True
-
 
     def not_one_short(self, cell):
 
@@ -392,7 +376,7 @@ class Layout:
 
     def move_from(self, cell, dir):
         """ move from cell in direction dir  """
-        print (cell, dir)
+        print(cell, dir)
         cell.draw_track(self.turtle)
         if dir == "N":
             from_dir = "S"
@@ -402,15 +386,15 @@ class Layout:
             new_cell = self.layout[cell.row - 1][cell.col]
         elif dir == "E":
             from_dir = "W"
-            new_cell = self.layout[cell.row][cell.col+1]
-        elif dir =="W":
+            new_cell = self.layout[cell.row][cell.col + 1]
+        elif dir == "W":
             from_dir = "E"
-            new_cell = self.layout[cell.row][cell.col-1]
+            new_cell = self.layout[cell.row][cell.col - 1]
         undo = False
         if new_cell.content == Content.EMPTY:
             new_cell.content = Content.TEMP_TRACK
             undo = True
-        if self.done(cell):
+        if self.done(new_cell):
             raise ValueError("Complete")
         if self.check_constraints():
             if self.not_one_short(new_cell):
@@ -433,7 +417,7 @@ class Layout:
                                     break
                         self.move_from(new_cell, to_dir)
                 else:
-                    print ("Would be trapped")
+                    print("Would be trapped")
             else:
                 print("One short")
         # get here if path we took is wrong somewhere
@@ -444,29 +428,34 @@ class Layout:
             cell.content = Content.EMPTY
 
     def begin(self):
-        new_cell = self.layout[self.start[0]][0]
+        new_cell = self.layout[self.start][0]
         moves = self.moves(new_cell)
         for to_dir in moves:
             self.move_from(new_cell, to_dir)
 
-board = Layout(size=4)
-# board.add_track(Track.NW, 1, 7, True)
-# board.add_track(Track.SE, 3, 8, True)
-# board.add_track(Track.EW, 5, 3, True)
-# board.add_track(Track.NS, 5, 1, True)
-# board.set_start(7)
-# board.set_end(5)
-# board.set_constraints("2464575286563421")
-board.add_track(Track.SW, 3, 4, True)
-board.add_track(Track.NW, 4, 2, True)
-board.add_track(Track.EW, 1, 3, True)
-board.add_track(Track.NS, 2, 1, True)
-board.set_start(3)
-board.set_end(2)
-board.set_constraints("14322431")
+
+board = Layout(size=8)
+board.add_track(Track.NW, 6, 0, True)
+board.add_track(Track.SE, 7, 2, True)
+board.add_track(Track.EW, 2, 4, True)
+board.add_track(Track.NS, 0, 4, True)
+
+
+board.set_start(6)
+board.set_end(4)
+board.set_constraints("2464575286563421")
+
+# board = Layout(size=4)
+# board.add_track(Track.SW, 2, 3, True)
+# board.add_track(Track.NW, 3, 1, True)
+# board.add_track(Track.EW, 0, 2, True)
+# board.add_track(Track.NS, 1, 0, True)
+# board.set_start(2)
+# board.set_end(1)
+# board.set_constraints("14322431")
+
 board.draw()
-board.move_count = 0
-board.move_max = 100000
+
 try:
     board.begin()
 except ValueError as e:
