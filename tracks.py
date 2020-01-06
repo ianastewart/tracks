@@ -22,12 +22,6 @@ class Track(Enum):
                 return tr
 
 
-class Content(Enum):
-    EMPTY = 0
-    TEMP_TRACK = 1
-    PERMANENT = 2
-
-
 class Cell:
     def __init__(self, row, col, cell_size):
         self.cell_size = cell_size
@@ -35,7 +29,7 @@ class Cell:
         self.y = row * self.cell_size + self.cell_size / 2
         self.row = row
         self.col = col
-        self.content = Content.EMPTY
+        self.permanent = False
         self.track = None
         self.must_connect = ""
         self.is_start = False
@@ -45,13 +39,13 @@ class Cell:
         return f"R:{self.row} C:{self.col} {self.content} {self.track}"
 
     def is_empty(self):
-        return self.content == Content.EMPTY
+        return self.track is None
+
 
     def has_dir(self, dir):
-        if self.content != Content.EMPTY:
-            if self.track:
-                if dir in self.track.name:
-                    return True
+        if self.track:
+            return dir in self.track.name
+
 
     def draw_border(self, t):
         t.pensize(1)
@@ -71,7 +65,7 @@ class Cell:
         t.penup()
 
     def draw_track(self, t, erase=False):
-        """ draw the track piece in the cell """
+        """ Draw the track piece in the cell """
         s = self.cell_size
         s2 = s / 2
         x1 = self.x + s2
@@ -84,13 +78,9 @@ class Cell:
             t.goto(x1, y1)
             t.write(self.must_connect, font=FONT)
         if self.track:
-            color = "red"
-            if self.content == Content.TEMP_TRACK:
-                color = "white" if erase else "black"
-            elif self.content == Content.PERMANENT:
+            color = "white" if erase else "black"
+            if self.permanent:
                 color = "blue"
-            if color == "red":
-                breakpoint()
             t.color(color)
             if self.track == Track.NS:
                 t.setheading(90)
@@ -157,6 +147,7 @@ class Layout:
         self.move_max = 1000000
 
     def draw(self, moves=False):
+        """ Draw the whole layout """
         for row in range(self.size):
             for col in range(self.size):
                 cell = self.layout[row][col]
@@ -190,6 +181,7 @@ class Layout:
         turtle.update()
 
     def coords(self, row, col):
+        """ Convert row, column to screen coordinates """
         x = col * self.cell_size + self.cell_size / 2
         y = row * self.cell_size + self.cell_size / 2
         return x, y
@@ -213,7 +205,7 @@ class Layout:
         Start and end are special cases
         """
         cell = self.layout[row][col]
-        cell.content = Content.PERMANENT
+        cell.permanent = True
         cell.track = Track[track]
         if start:
             if col != 0:
@@ -249,29 +241,21 @@ class Layout:
         c1 = cell.col - 1
         c2 = cell.col + 1
 
-        if r2 < self.size and (cell.is_empty() or cell.has_dir("N")):
+        if r2 < self.size and (not cell.track or cell.has_dir("N")):
             new_cell = self.layout[r2][cell.col]
-            if new_cell.content == Content.EMPTY:
+            if not new_cell.track or new_cell.has_dir("S"):
                 result.append("N")
-            elif new_cell.has_dir("S"):
-                result.append("N")
-        if r1 >= 0 and (cell.is_empty() or cell.has_dir("S")):
+        if r1 >= 0 and (not cell.track or cell.has_dir("S")):
             new_cell = self.layout[r1][cell.col]
-            if new_cell.content == Content.EMPTY:
+            if not new_cell.track or new_cell.has_dir("N"):
                 result.append("S")
-            elif new_cell.has_dir("N"):
-                result.append("S")
-        if c1 >= 0 and (cell.is_empty() or cell.has_dir("W")):
+        if c1 >= 0 and (not cell.track or cell.has_dir("W")):
             new_cell = self.layout[cell.row][c1]
-            if new_cell.content == Content.EMPTY:
+            if not new_cell.track or new_cell.has_dir("E"):
                 result.append("W")
-            elif new_cell.has_dir("E"):
-                result.append("W")
-        if c2 < self.size and (cell.is_empty() or cell.has_dir("E")):
+        if c2 < self.size and (not cell.track or cell.has_dir("E")):
             new_cell = self.layout[cell.row][c2]
-            if new_cell.content == Content.EMPTY:
-                result.append("E")
-            elif new_cell.has_dir("W"):
+            if not new_cell.track or new_cell.has_dir("W"):
                 result.append("E")
         if cell.is_start and "W" in result:
             result.remove("W")
@@ -287,10 +271,10 @@ class Layout:
             count = 0
             for col in range(self.size):
                 cell = self.layout[row][col]
-                if not cell.is_empty():
+                if cell.track:
                     count += 1
                 if exact:
-                    if cell.must_connect and cell.is_empty():
+                    if cell.must_connect and not cell.track:
                         if DEBUG:
                             print("Must connect failure")
                         return False
@@ -313,7 +297,7 @@ class Layout:
             count = 0
             for row in range(self.size):
                 cell = self.layout[row][col]
-                if not cell.is_empty():
+                if cell.track:
                     count += 1
             self.col_count.append(self.col_constraints[col] - count)
             if exact:
@@ -412,15 +396,18 @@ class Layout:
             new_cell = self.layout[cell.row][cell.col - 1]
         undo = False
         # temporarily add a track if needed so can calculate constraints
-        if new_cell.content == Content.EMPTY:
-            new_cell.content = Content.TEMP_TRACK
+        # if new_cell.content == Content.EMPTY:
+        #     new_cell.content = Content.TEMP_TRACK
+        if not cell.track:
+            cell.track = Track.NS
             undo = True
         if self.done(new_cell):
             raise ValueError("Solved")
         if self.check_constraints():
             if self.not_trapped(new_cell):
                 if undo:
-                    new_cell.content = Content.EMPTY
+                    #new_cell.content = Content.EMPTY
+                    cell.track = None
                 moves = self.moves(new_cell)
                 if from_dir in moves:
                     moves.remove(from_dir)
@@ -439,22 +426,27 @@ class Layout:
 
                 if not bad_move:
                     for to_dir in moves:
-                        if new_cell.content == Content.EMPTY:
+                        if not new_cell.track:
                             new_cell.track = Track.identify(from_dir + to_dir)
-                            new_cell.content = Content.TEMP_TRACK
+                            #new_cell.content = Content.TEMP_TRACK
                         self.move_from(new_cell, to_dir)
 
             else:
                 print("Would be trapped")
         # get here if path we took is wrong somewhere
-        if new_cell.content == Content.TEMP_TRACK:
-            new_cell.content = Content.EMPTY
+        if new_cell.track and not new_cell.permanent:
             new_cell.track = None
-        if cell.content == Content.TEMP_TRACK:
-            if DEBUG:
-                cell.draw_track(self.turtle, erase=True)
+        if cell.track and not cell.permanent:
             cell.track = None
-            cell.content = Content.EMPTY
+
+        # if new_cell.content == Content.TEMP_TRACK:
+        #     new_cell.content = Content.EMPTY
+        #     new_cell.track = None
+        # if cell.content == Content.TEMP_TRACK:
+        #     if DEBUG:
+        #         cell.draw_track(self.turtle, erase=True)
+        #     cell.track = None
+        #     cell.content = Content.EMPTY
 
     def solve(self):
         new_cell = self.layout[self.start][0]
