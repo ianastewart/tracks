@@ -1,5 +1,9 @@
 from enum import Enum
+from time import perf_counter
 import turtle
+
+FONT = ("sans-serif", 18, "normal")
+DEBUG = True
 
 
 class Track(Enum):
@@ -9,6 +13,13 @@ class Track(Enum):
     NW = 4
     NS = 5
     EW = 6
+
+    @classmethod
+    def identify(cls, str):
+        """ return matching enum from 2 char string, order undefined"""
+        for tr in cls:
+            if str[0] in tr.name and str[1] in tr.name:
+                return tr
 
 
 class Content(Enum):
@@ -26,7 +37,7 @@ class Cell:
         self.col = col
         self.content = Content.EMPTY
         self.track = None
-        self.must_connect = False
+        self.must_connect = ""
         self.is_start = False
         self.is_end = False
 
@@ -46,9 +57,9 @@ class Cell:
         t.pensize(1)
         t.setpos(self.x, self.y)
         t.pendown()
-        font = ("sans-serif", 18, "normal")
         t.color("gray")
-        t.write(f" {self.row},{self.col}", font=font)
+        if DEBUG:
+            t.write(f" {self.row},{self.col}", font=FONT)
         t.setheading(0)
         t.forward(self.cell_size)
         t.left(90)
@@ -69,13 +80,13 @@ class Cell:
         y2 = self.y + s
         t.pensize(4)
         t.penup()
-        if self.must_connect:
+        if DEBUG and self.must_connect:
             t.goto(x1, y1)
-            t.dot(10, "red")
+            t.write(self.must_connect, font=FONT)
         if self.track:
             color = "red"
             if self.content == Content.TEMP_TRACK:
-                color = "yellow" if erase else "orange"
+                color = "white" if erase else "black"
             elif self.content == Content.PERMANENT:
                 color = "blue"
             t.color(color)
@@ -94,25 +105,21 @@ class Cell:
                 t.pendown()
                 t.goto(x1, y1)
                 t.goto(x2, y1)
-                # t.circle(-r, -90)
             elif self.track == Track.SE:
                 t.goto(x1, self.y)
                 t.pendown()
                 t.goto(x1, y1)
                 t.goto(x2, y1)
-                # t.circle(r, -90)
             elif self.track == Track.NW:
                 t.goto(x1, y2)
                 t.pendown()
                 t.goto(x1, y1)
                 t.goto(self.x, y1)
-                # t.circle(r, -90)
             elif self.track == Track.SW:
                 t.goto(x1, self.y)
                 t.pendown()
                 t.goto(x1, y1)
                 t.goto(self.x, y1)
-                # t.circle(-r, 90)
             t.penup()
             turtle.update()
 
@@ -136,7 +143,6 @@ class Layout:
         self.turtle.penup()
 
         self.layout = []
-        self.must_connect = []
         for row in range(size):
             col_list = []
             for col in range(size):
@@ -146,36 +152,39 @@ class Layout:
         self.start = 0
         self.end = 0
         self.move_count = 0
-        self.move_max = 100000
+        self.move_max = 1000000
 
-    def draw(self):
+    def draw(self, moves=False):
         for row in range(self.size):
             for col in range(self.size):
                 cell = self.layout[row][col]
                 cell.draw_border(self.turtle)
+                if moves:
+                    s = self.cell_size / 6
+                    self.turtle.goto(cell.x + s, cell.y + s)
+                    self.turtle.write(self.moves(cell))
                 cell.draw_track(self.turtle)
         turtle.update()
         row = self.size
-        font = ("sans-serif", 18, "normal")
         self.turtle.color("black")
         # Numbers across the top
         for col in range(self.size):
             x, y = self.coords(row, col)
             self.turtle.setpos(x + self.cell_size / 3, y)
-            self.turtle.write(self.col_constraints[col], font=font)
+            self.turtle.write(self.col_constraints[col], font=FONT)
         col = self.size
         # Numbers down right side
         for row in range(self.size - 1, -1, -1):
             x, y = self.coords(row, col)
             self.turtle.setpos(x + self.cell_size / 6, y + self.cell_size / 3)
-            self.turtle.write(self.row_constraints[row], font=font)
+            self.turtle.write(self.row_constraints[row], font=FONT)
         # start and end
         x, y = self.coords(self.start, 0)
         self.turtle.setpos(x - self.cell_size / 3, y + self.cell_size / 3)
-        self.turtle.write("A", font=font)
+        self.turtle.write("A", font=FONT)
         x, y = self.coords(0, self.end)
         self.turtle.setpos(x + self.cell_size / 3, y - self.cell_size / 2)
-        self.turtle.write("B", font=font)
+        self.turtle.write("B", font=FONT)
         turtle.update()
 
     def coords(self, row, col):
@@ -215,26 +224,22 @@ class Layout:
             self.end = col
             cell.is_end = True
 
-        cell.top = False if "N" in track else True
-        cell.bottom = False if "S" in track and row > 0 else True
-        cell.left = False if "W" in track and col > 0 else True
-        cell.right = False if "E" in track else True
         # determine adjacent cells that must connect
-        if not cell.top:
-            self.layout[row + 1][col].must_connect = "S"
-            self.must_connect.append(self.layout[row + 1][col])
-        if not cell.bottom:
-            self.layout[row - 1][col].must_connect = "N"
-            self.must_connect.append(self.layout[row - 1][col])
-        if not cell.left:
-            self.layout[row][col - 1].must_connect = "E"
-            self.must_connect.append(self.layout[row][col - 1])
-        if not cell.right:
-            self.layout[row][col + 1].must_connect = "W"
-            self.must_connect.append(self.layout[row][col + 1])
+        if "N" in track:
+            self.layout[row + 1][col].must_connect += "S"
+            self.layout[row + 1][col].not_from = "N"
+        elif "S" in track and row > 0:
+            self.layout[row - 1][col].must_connect += "N"
+            self.layout[row - 1][col].not_from = "S"
+        elif "W" in track and col > 0:
+            self.layout[row][col - 1].must_connect += "E"
+            self.layout[row][col - 1].not_from = "W"
+        elif "E" in track:
+            self.layout[row][col + 1].must_connect += "W"
+            self.layout[row][col + 1].not_from = "E"
 
     def moves(self, cell):
-        """ return a list of possible moves for a cell """
+        """ return a list of possible moves from a cell """
 
         result = []
         r1 = cell.row - 1
@@ -243,24 +248,28 @@ class Layout:
         c2 = cell.col + 1
 
         if r2 < self.size and (cell.is_empty() or cell.has_dir("N")):
-            if self.layout[r2][cell.col].content == Content.EMPTY:
+            new_cell = self.layout[r2][cell.col]
+            if new_cell.content == Content.EMPTY:
                 result.append("N")
-            elif self.layout[r2][cell.col].has_dir("S"):
+            elif new_cell.has_dir("S"):
                 result.append("N")
         if r1 >= 0 and (cell.is_empty() or cell.has_dir("S")):
-            if self.layout[r1][cell.col].content == Content.EMPTY:
+            new_cell = self.layout[r1][cell.col]
+            if new_cell.content == Content.EMPTY:
                 result.append("S")
-            elif self.layout[r1][cell.col].has_dir("N"):
+            elif new_cell.has_dir("N"):
                 result.append("S")
         if c1 >= 0 and (cell.is_empty() or cell.has_dir("W")):
-            if self.layout[cell.row][c1].content == Content.EMPTY:
+            new_cell = self.layout[cell.row][c1]
+            if new_cell.content == Content.EMPTY:
                 result.append("W")
-            elif self.layout[cell.row][c1].has_dir("E"):
+            elif new_cell.has_dir("E"):
                 result.append("W")
         if c2 < self.size and (cell.is_empty() or cell.has_dir("E")):
-            if self.layout[cell.row][c2].content == Content.EMPTY:
+            new_cell = self.layout[cell.row][c2]
+            if new_cell.content == Content.EMPTY:
                 result.append("E")
-            elif self.layout[cell.row][c2].has_dir("W"):
+            elif new_cell.has_dir("W"):
                 result.append("E")
         if cell.is_start and "W" in result:
             result.remove("W")
@@ -280,18 +289,23 @@ class Layout:
                     count += 1
                 if exact:
                     if cell.must_connect and cell.is_empty():
-                        print("Must connect failure")
+                        if DEBUG:
+                            print("Must connect failure")
                         return False
             self.row_count.append(self.row_constraints[row] - count)
             if exact:
                 if count != self.row_constraints[row]:
-                    print(
-                        f"Exact Row {row} failure {count} != {self.row_constraints[row]}"
-                    )
+                    if DEBUG:
+                        print(
+                            f"Exact Row {row} failure {count} != {self.row_constraints[row]}"
+                        )
                     return False
             else:
                 if count > self.row_constraints[row]:
-                    print(f"Row {row} failure {count} > {self.row_constraints[row]}")
+                    if DEBUG:
+                        print(
+                            f"Row {row} failure {count} > {self.row_constraints[row]}"
+                        )
                     return False
         for col in range(self.size):
             count = 0
@@ -302,18 +316,18 @@ class Layout:
             self.col_count.append(self.col_constraints[col] - count)
             if exact:
                 if count != self.col_constraints[col]:
-                    print(
-                        f"Exact column {col} failure {count} != {self.col_constraints[col]}"
-                    )
+                    if DEBUG:
+                        print(
+                            f"Exact column {col} failure {count} != {self.col_constraints[col]}"
+                        )
                     return False
             else:
                 if count > self.col_constraints[col]:
-                    print(f"Column {col} failure {count} > {self.col_constraints[col]}")
+                    if DEBUG:
+                        print(
+                            f"Column {col} failure {count} > {self.col_constraints[col]}"
+                        )
                     return False
-        if exact:
-            for cell in self.must_connect:
-                if cell.content != Content.EMPTY:
-                    return True
         return True
 
     def not_trapped(self, cell):
@@ -341,7 +355,6 @@ class Layout:
         return True
 
     def not_one_short(self, cell):
-
         return True
 
         if cell.col > 0:
@@ -381,8 +394,8 @@ class Layout:
         self.move_count += 1
         if self.move_count == self.move_max:
             raise ValueError("Max move count reached")
-
-        cell.draw_track(self.turtle)
+        if DEBUG:
+            cell.draw_track(self.turtle)
         if dir == "N":
             from_dir = "S"
             new_cell = self.layout[cell.row + 1][cell.col]
@@ -410,33 +423,58 @@ class Layout:
                     if from_dir in moves:
                         moves.remove(from_dir)
                     # favour continuing in same direction
-                    if dir in moves:
-                        moves.remove(dir)
-                        moves.insert(0, dir)
-                    for to_dir in moves:
-                        if new_cell.content == Content.EMPTY:
-                            for tr in Track:
-                                if from_dir in tr.name and to_dir in tr.name:
-                                    new_cell.track = tr
-                                    new_cell.content = Content.TEMP_TRACK
-                                    break
-                        self.move_from(new_cell, to_dir)
+                    # if "dir" in moves:
+                    #     moves.remove(dir)
+                    #     moves.insert(0, dir)
+
+                    bad_move = False
+                    if new_cell.must_connect:
+                        if from_dir in new_cell.must_connect:
+                            to_dir = new_cell.must_connect.replace(from_dir, "")
+                            if to_dir:
+                                moves = to_dir
+                        else:
+                            if len(new_cell.must_connect) == 1:
+                                moves = new_cell.must_connect
+                            else:
+                                bad_move = True
+
+                    if not bad_move:
+                        for to_dir in moves:
+                            if new_cell.content == Content.EMPTY:
+                                new_cell.track = Track.identify(from_dir + to_dir)
+                                new_cell.content = Content.TEMP_TRACK
+                            self.move_from(new_cell, to_dir)
+
                 else:
-                    print("Would be trapped")
+
+                        print("Would be trapped")
             else:
-                print("One short")
+                if DEBUG:
+                    print("One short")
         # get here if path we took is wrong somewhere
         if new_cell.content == Content.TEMP_TRACK:
             new_cell.content = Content.EMPTY
+            new_cell.track = None
         if cell.content == Content.TEMP_TRACK:
-            cell.draw_track(self.turtle, erase=True)
+            if DEBUG:
+                cell.draw_track(self.turtle, erase=True)
             cell.content = Content.EMPTY
 
-    def begin(self):
+    def solve(self):
         new_cell = self.layout[self.start][0]
         moves = self.moves(new_cell)
         for to_dir in moves:
             self.move_from(new_cell, to_dir)
+
+    def result(self, message, elapsed):
+        self.draw()
+        self.turtle.goto(0, 0)
+        self.turtle.color("black")
+        self.turtle.write(
+            f"{message} in {self.move_count} moves. Time:{elapsed}", font=FONT
+        )
+        self.scr.textinput("Done", "Hit key")
 
 
 def parse(params):
@@ -459,36 +497,22 @@ def parse(params):
             elif c[4] == "e":
                 end = True
             else:
-                raise("Params wrong - 2")
+                raise ("Params wrong - 2")
         l.add_track(c[:2], int(c[2]), int(c[3]), start=start, end=end)
     return l
 
 
 def main():
-    board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
-
-    # board = Layout(size=8)
-    # board.add_track("NW", 6, 0, start=True)
-    # board.add_track("SE", 7, 2)
-    # board.add_track("EW", 2, 4)
-    # board.add_track("NS", 0, 4, end=True)
-    # board.set_constraints("2464575286563421")
-
-    # board = Layout(size=4)
-    # board.add_track(Track.SW, 2, 3)
-    # board.add_track(Track.NW, 3, 1)
-    # board.add_track(Track.EW, 0, 2, start=True)
-    # board.add_track(Track.NS, 1, 0, end=True)
-    # board.set_constraints("14322431")
-
+    #board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
+    board = parse("8:4533433525853421:SW40s:NE52:NS03e")
     board.draw()
-
     try:
-        board.begin()
+        start = perf_counter()
+        board.solve()
     except ValueError as e:
-        print(e)
-    screen = turtle.Screen()
-    ans = screen.textinput("Done", "Hit key")
+        end = perf_counter()
+        elapsed = end - start
+        board.result(e.__str__(), elapsed)
 
 
 if __name__ == "__main__":
