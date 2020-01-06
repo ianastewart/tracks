@@ -3,7 +3,7 @@ from time import perf_counter
 import turtle
 
 FONT = ("sans-serif", 18, "normal")
-DEBUG = True
+DEBUG = False
 
 
 class Track(Enum):
@@ -89,6 +89,8 @@ class Cell:
                 color = "white" if erase else "black"
             elif self.content == Content.PERMANENT:
                 color = "blue"
+            if color == "red":
+                breakpoint()
             t.color(color)
             if self.track == Track.NS:
                 t.setheading(90)
@@ -409,49 +411,41 @@ class Layout:
             from_dir = "E"
             new_cell = self.layout[cell.row][cell.col - 1]
         undo = False
+        # temporarily add a track if needed so can calculate constraints
         if new_cell.content == Content.EMPTY:
             new_cell.content = Content.TEMP_TRACK
             undo = True
         if self.done(new_cell):
-            raise ValueError("Complete")
+            raise ValueError("Solved")
         if self.check_constraints():
-            if self.not_one_short(new_cell):
-                if self.not_trapped(new_cell):
-                    if undo:
-                        new_cell.content = Content.EMPTY
-                    moves = self.moves(new_cell)
-                    if from_dir in moves:
-                        moves.remove(from_dir)
-                    # favour continuing in same direction
-                    # if "dir" in moves:
-                    #     moves.remove(dir)
-                    #     moves.insert(0, dir)
-
-                    bad_move = False
-                    if new_cell.must_connect:
-                        if from_dir in new_cell.must_connect:
-                            to_dir = new_cell.must_connect.replace(from_dir, "")
-                            if to_dir:
-                                moves = to_dir
+            if self.not_trapped(new_cell):
+                if undo:
+                    new_cell.content = Content.EMPTY
+                moves = self.moves(new_cell)
+                if from_dir in moves:
+                    moves.remove(from_dir)
+                bad_move = False
+                # must connect cells are special case not handled in move generation
+                if new_cell.must_connect:
+                    if from_dir in new_cell.must_connect:
+                        to_dir = new_cell.must_connect.replace(from_dir, "")
+                        if to_dir:
+                            moves = to_dir
+                    else:
+                        if len(new_cell.must_connect) == 1:
+                            moves = new_cell.must_connect
                         else:
-                            if len(new_cell.must_connect) == 1:
-                                moves = new_cell.must_connect
-                            else:
-                                bad_move = True
+                            bad_move = True
 
-                    if not bad_move:
-                        for to_dir in moves:
-                            if new_cell.content == Content.EMPTY:
-                                new_cell.track = Track.identify(from_dir + to_dir)
-                                new_cell.content = Content.TEMP_TRACK
-                            self.move_from(new_cell, to_dir)
+                if not bad_move:
+                    for to_dir in moves:
+                        if new_cell.content == Content.EMPTY:
+                            new_cell.track = Track.identify(from_dir + to_dir)
+                            new_cell.content = Content.TEMP_TRACK
+                        self.move_from(new_cell, to_dir)
 
-                else:
-
-                        print("Would be trapped")
             else:
-                if DEBUG:
-                    print("One short")
+                print("Would be trapped")
         # get here if path we took is wrong somewhere
         if new_cell.content == Content.TEMP_TRACK:
             new_cell.content = Content.EMPTY
@@ -459,6 +453,7 @@ class Layout:
         if cell.content == Content.TEMP_TRACK:
             if DEBUG:
                 cell.draw_track(self.turtle, erase=True)
+            cell.track = None
             cell.content = Content.EMPTY
 
     def solve(self):
@@ -466,13 +461,14 @@ class Layout:
         moves = self.moves(new_cell)
         for to_dir in moves:
             self.move_from(new_cell, to_dir)
+        raise ValueError("Failed to find solution")
 
     def result(self, message, elapsed):
         self.draw()
         self.turtle.goto(0, 0)
         self.turtle.color("black")
         self.turtle.write(
-            f"{message} in {self.move_count} moves. Time:{elapsed}", font=FONT
+            f"{message} in {self.move_count} moves. Time:{elapsed:.2f}s", font=FONT
         )
         self.scr.textinput("Done", "Hit key")
 
@@ -503,8 +499,9 @@ def parse(params):
 
 
 def main():
-    #board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
-    board = parse("8:4533433525853421:SW40s:NE52:NS03e")
+    board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
+    #board = parse("8:2474575286563421:NW60s:SE72:EW24:NS04e")
+    #board = parse("8:4533433525853421:SW40s:NE52:NS03e")
     board.draw()
     try:
         start = perf_counter()
@@ -512,7 +509,7 @@ def main():
     except ValueError as e:
         end = perf_counter()
         elapsed = end - start
-        board.result(e.__str__(), elapsed)
+        board.result(str(e), elapsed)
 
 
 if __name__ == "__main__":
