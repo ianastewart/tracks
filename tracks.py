@@ -13,6 +13,7 @@ class Track(Enum):
     NW = 4
     NS = 5
     EW = 6
+    TEMP = 7
 
     @classmethod
     def identify(cls, str):
@@ -41,11 +42,9 @@ class Cell:
     def is_empty(self):
         return self.track is None
 
-
     def has_dir(self, dir):
         if self.track:
             return dir in self.track.name
-
 
     def draw_border(self, t):
         t.pensize(1)
@@ -145,6 +144,10 @@ class Layout:
         self.end = 0
         self.move_count = 0
         self.move_max = 1000000
+        self.col_count = []
+        self.row_count = []
+        self.col_perm = []
+        self.row_perm = []
 
     def draw(self, moves=False):
         """ Draw the whole layout """
@@ -221,16 +224,12 @@ class Layout:
         # determine adjacent cells that must connect
         if "N" in track:
             self.layout[row + 1][col].must_connect += "S"
-            self.layout[row + 1][col].not_from = "N"
-        elif "S" in track and row > 0:
+        if "S" in track and row > 0:
             self.layout[row - 1][col].must_connect += "N"
-            self.layout[row - 1][col].not_from = "S"
-        elif "W" in track and col > 0:
+        if "W" in track and col > 0:
             self.layout[row][col - 1].must_connect += "E"
-            self.layout[row][col - 1].not_from = "W"
-        elif "E" in track:
+        if "E" in track:
             self.layout[row][col + 1].must_connect += "W"
-            self.layout[row][col + 1].not_from = "E"
 
     def moves(self, cell):
         """ return a list of possible moves from a cell """
@@ -265,20 +264,28 @@ class Layout:
 
     def check_constraints(self, exact=False):
         """ Returns true if all cell counts within limits """
-        self.row_count = []
+        self.row_count = (
+            []
+        )  # difference between actual count of occupied cells and expected count
+        self.row_perm = []  # number of permanent cells in this row
         self.col_count = []
+        self.col_perm = []
         for row in range(self.size):
             count = 0
+            perm = 0
             for col in range(self.size):
                 cell = self.layout[row][col]
                 if cell.track:
                     count += 1
+                if cell.permanent:
+                    perm += 1
                 if exact:
                     if cell.must_connect and not cell.track:
                         if DEBUG:
                             print("Must connect failure")
                         return False
             self.row_count.append(self.row_constraints[row] - count)
+            self.row_perm.append(perm)
             if exact:
                 if count != self.row_constraints[row]:
                     if DEBUG:
@@ -286,20 +293,21 @@ class Layout:
                             f"Exact Row {row} failure {count} != {self.row_constraints[row]}"
                         )
                     return False
-            else:
-                if count > self.row_constraints[row]:
-                    if DEBUG:
-                        print(
-                            f"Row {row} failure {count} > {self.row_constraints[row]}"
-                        )
-                    return False
+            elif count > self.row_constraints[row]:
+                if DEBUG:
+                    print(f"Row {row} failure {count} > {self.row_constraints[row]}")
+                return False
         for col in range(self.size):
             count = 0
+            perm = 0
             for row in range(self.size):
                 cell = self.layout[row][col]
                 if cell.track:
                     count += 1
+                if cell.permanent:
+                    perm += 1
             self.col_count.append(self.col_constraints[col] - count)
+            self.col_perm.append(perm)
             if exact:
                 if count != self.col_constraints[col]:
                     if DEBUG:
@@ -307,66 +315,39 @@ class Layout:
                             f"Exact column {col} failure {count} != {self.col_constraints[col]}"
                         )
                     return False
-            else:
-                if count > self.col_constraints[col]:
-                    if DEBUG:
-                        print(
-                            f"Column {col} failure {count} > {self.col_constraints[col]}"
-                        )
-                    return False
+            elif count > self.col_constraints[col]:
+                if DEBUG:
+                    print(f"Column {col} failure {count} > {self.col_constraints[col]}")
+                return False
         return True
 
     def not_trapped(self, cell):
         """ Return false if trapped one side of a full row or col and need to get to the other side """
+
         for c in range(1, self.size - 1):
             if self.col_count[c] == 0:
-                if cell.col < c:
-                    for i in range(c + 1, self.size):
-                        if self.col_count[i] > 0:
-                            return False
-                elif cell.col > c:
-                    for i in range(c - 1, 0, -1):
-                        if self.col_count[i] > 0:
-                            return False
+                # ignore cols with a permanent track - if not connected, it may be a path back to other side
+                if self.col_perm[c] == 0:
+                    if cell.col < c:
+                        for i in range(c + 1, self.size):
+                            if self.col_count[i] > 0:
+                                return False
+                    elif cell.col > c:
+                        for i in range(0, c):
+                            if self.col_count[i] > 0:
+                                return False
         for r in range(1, self.size - 1):
             if self.row_count[r] == 0:
-                if cell.row < r:
-                    for i in range(r + 1, self.size):
-                        if self.row_count[i] > 0:
-                            return False
-                elif cell.row > r:
-                    for i in range(r - 1, 0, -1):
-                        if self.row_count[i] > 0:
-                            return False
-        return True
-
-    def not_one_short(self, cell):
-        return True
-
-        if cell.col > 0:
-            if self.col_count[cell.col - 1] == 1:
-                if cell.col == 1:
-                    return False
-                if self.col_count[cell.col - 2] == 0:
-                    return False
-        if cell.col < self.size - 1:
-            if self.col_count[cell.col + 1] == 1:
-                if cell.col == self.size - 2:
-                    return False
-                if self.col_count[cell.col + 2] == 0:
-                    return False
-        if cell.row > 0:
-            if self.row_count[cell.row - 1] == 1:
-                if cell.row == 1:
-                    return False
-                if self.row_count[cell.row - 2] == 0:
-                    return False
-        if cell.row < self.size - 1:
-            if self.row_count[cell.row + 1] == 1:
-                if cell.row == self.size - 2:
-                    return False
-                if self.row_count[cell.row + 2] == 0:
-                    return False
+                # ignore rows with a permanent track - if not connected, it may be a path back to other side
+                if self.row_perm[r] == 0:
+                    if cell.row < r:
+                        for i in range(r + 1, self.size):
+                            if self.row_count[i] > 0:
+                                return False
+                    if cell.row > r:
+                        for i in range(0, 2):
+                            if self.row_count[i] > 0:
+                                return False
         return True
 
     def done(self, cell):
@@ -380,6 +361,9 @@ class Layout:
         self.move_count += 1
         if self.move_count == self.move_max:
             raise ValueError("Max move count reached")
+        # if self.move_count == 8400:
+        #     self.draw()
+        #     breakpoint()
         if DEBUG:
             cell.draw_track(self.turtle)
         if dir == "N":
@@ -395,19 +379,15 @@ class Layout:
             from_dir = "E"
             new_cell = self.layout[cell.row][cell.col - 1]
         undo = False
-        # temporarily add a track if needed so can calculate constraints
-        # if new_cell.content == Content.EMPTY:
-        #     new_cell.content = Content.TEMP_TRACK
-        if not cell.track:
-            cell.track = Track.NS
-            undo = True
+        # temporarily add a track if empty so can calculate constraints
+        if not new_cell.track:
+            new_cell.track = Track.TEMP
         if self.done(new_cell):
             raise ValueError("Solved")
         if self.check_constraints():
             if self.not_trapped(new_cell):
-                if undo:
-                    #new_cell.content = Content.EMPTY
-                    cell.track = None
+                if new_cell.track == Track.TEMP:
+                    new_cell.track = None
                 moves = self.moves(new_cell)
                 if from_dir in moves:
                     moves.remove(from_dir)
@@ -422,33 +402,28 @@ class Layout:
                         if len(new_cell.must_connect) == 1:
                             moves = new_cell.must_connect
                         else:
+                            # must connect cell is already fully connected
                             bad_move = True
 
                 if not bad_move:
+                    # Recursively explore each possible move, depth first
                     for to_dir in moves:
                         if not new_cell.track:
                             new_cell.track = Track.identify(from_dir + to_dir)
-                            #new_cell.content = Content.TEMP_TRACK
                         self.move_from(new_cell, to_dir)
-
             else:
-                print("Would be trapped")
-        # get here if path we took is wrong somewhere
-        if new_cell.track and not new_cell.permanent:
+                if DEBUG:
+                    print("Would be trapped")
+        # Get here if all moves fail and we need to backtrack
+        if not new_cell.permanent:
             new_cell.track = None
-        if cell.track and not cell.permanent:
+        if not cell.permanent:
+            if DEBUG:
+                cell.draw_track(self.turtle, erase=True)
             cell.track = None
 
-        # if new_cell.content == Content.TEMP_TRACK:
-        #     new_cell.content = Content.EMPTY
-        #     new_cell.track = None
-        # if cell.content == Content.TEMP_TRACK:
-        #     if DEBUG:
-        #         cell.draw_track(self.turtle, erase=True)
-        #     cell.track = None
-        #     cell.content = Content.EMPTY
-
     def solve(self):
+        """ Initiate the recursive solver """
         new_cell = self.layout[self.start][0]
         moves = self.moves(new_cell)
         for to_dir in moves:
@@ -491,9 +466,13 @@ def parse(params):
 
 
 def main():
-    board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e")
-    #board = parse("8:2474575286563421:NW60s:SE72:EW24:NS04e")
-    #board = parse("8:4533433525853421:SW40s:NE52:NS03e")
+    board = parse("8:2464575286563421:NW60s:SE72:EW24:NS04e") #904
+    # board = parse("8:3456623347853221:NW30s:SW32:SW62:NS04e") #907
+    # board = parse("8:8443143523676422:NW00s:NE41:NS45:NS07e") #908
+    # board = parse("8:1216564534576221:EW40s:NS03e:NS45") #909
+    # board = parse("8:1225446636611544:EW60s:NS03e:EW75:SE26") #910
+
+    # board = parse("8:4533433525853421:SW40s:NE52:NS03e")
     board.draw()
     try:
         start = perf_counter()
